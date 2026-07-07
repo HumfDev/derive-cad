@@ -22,10 +22,8 @@ def extract_python_code(text: str) -> str:
 
 def validate_script_structure(script: str) -> None:
     """Contract check: the script must import build123d and define gen_step().
-    Execution and export are owned by the runner (see cad/runner.py's
-    ENTRYPOINT_FOOTER), so the script itself doesn't need __main__/export_step/argv
-    boilerplate — narrowing this contract to two checks removes a source of
-    otherwise-brittle format-compliance failures.
+    Execution and export are owned by skills/cad/scripts/step via cad/runner.py,
+    so the script itself doesn't need __main__/export_step/argv boilerplate.
     """
     if "build123d" not in script:
         raise ValueError("Script must import build123d.")

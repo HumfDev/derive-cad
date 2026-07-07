@@ -4,8 +4,8 @@ Text to CAD from your terminal. Connect an LLM API key, pick a working folder, a
 what you want to build — `dcad` generates real CAD files (STEP, STL, 3MF, GLB) on disk.
 
 > **Status: Milestone 2.** `dcad run "your prompt"` sends your description to the
-> configured LLM, which writes a build123d script, executes it in a sandbox, and retries on
-> failure.
+> configured LLM, which writes a build123d script, runs it through vendored cadpy
+> (`skills/cad/scripts/step`), and retries on failure.
 
 ## How it works
 
@@ -13,15 +13,30 @@ Before writing any code, the configured LLM produces a CAD brief (persisted as
 `brief.md`) — dimensions, units, features, and a small set of machine-checkable
 validation targets derived from your prompt. It then writes
 [build123d](https://github.com/gumyr/build123d) — a Python parametric CAD library built
-on the OpenCASCADE kernel — which is executed in a sandboxed subprocess to produce a
-STEP file, exported to your requested formats.
+on the OpenCASCADE kernel — which is executed via cadpy to produce a STEP file and
+optional sidecar exports (STL, 3MF, GLB).
 
 The result is checked against the brief's validation targets (bounding box, face/solid
 count) and, unless `enable_snapshot_review = false` or the configured model has no known
 vision support, a rendered snapshot of the result (`snapshots/*.png`) is reviewed by the
 same LLM before the run is accepted. Failures are classified into a specific category
 (syntax error, invalid geometry, wrong scale, missing feature, visual defect, timeout) and
-repaired with guidance targeted to that category — not a generic error resend.
+Failures are repaired per the vendored `skills/cad/references/repair-loop.md` — the LLM
+reads the failure output, classifies it, and applies the smallest source fix before rerunning.
+
+## CAD tools (upstream-shaped CLI)
+
+`dcad` mirrors the [earthtojake/text-to-cad](https://github.com/earthtojake/text-to-cad) skill tool layout:
+
+```bash
+dcad run "your prompt"     # full SKILL.md workflow (primary UX)
+dcad step model.py -o model.step --stl model.stl
+dcad inspect refs model.step --facts --planes --positioning
+dcad snapshot model.step   # Playwright snapshots (requires `.model.step.glb` sidecar)
+dcad open step|stl|recent  # open artifacts with your OS default app
+```
+
+The vendored skill lives at `skills/cad/` (see `skills/cad/UPSTREAM_SHA` for the pinned commit).
 
 ## Install
 
@@ -29,7 +44,7 @@ repaired with guidance targeted to that category — not a generic error resend.
 pipx install dcad
 ```
 
-Requires Python 3.10–3.14. [pipx](https://pipx.pypa.io/) keeps `dcad` and its dependencies
+Requires Python 3.11–3.14. [pipx](https://pipx.pypa.io/) keeps `dcad` and its dependencies
 (including the OpenCASCADE binding) isolated from your other Python projects.
 
 **From source** (contributors):
@@ -37,14 +52,20 @@ Requires Python 3.10–3.14. [pipx](https://pipx.pypa.io/) keeps `dcad` and its 
 ```bash
 git clone https://github.com/HumfDev/derive-cad.git
 cd derive-cad
+bash scripts/setup-dev.sh
+python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
-> **Note:** `dcad` depends on `build123d`, which pulls in a prebuilt OpenCASCADE
-> binding (`cadquery-ocp-novtk`, ~60MB per platform). Plain `pip install` works out of the
-> box on macOS (arm64/x86_64), Linux (manylinux x86_64/aarch64), and Windows (x64) — no
-> conda required. **Alpine/musl Docker images are not supported** (no musllinux wheels are
-> published); use a glibc base image such as `python:3.12-slim` if you containerize this.
+Do **not** also run `pip install -e packages/cadpy` — `dcad` already pulls in the vendored
+`cadpy` via `pyproject.toml`. Installing both in one command makes pip treat them as
+conflicting requirements.
+
+> **Note:** `dcad` vendors [earthtojake/text-to-cad](https://github.com/earthtojake/text-to-cad)'s
+> `skills/cad/` workflow and `packages/cadpy`. STEP generation and inspection use
+> `skills/cad/scripts/step` and `skills/cad/scripts/inspect`. OpenCASCADE comes via
+> `cadquery-ocp` (~60MB per platform). **Alpine/musl Docker images are not supported**; use
+> `python:3.12-slim` or similar glibc base images.
 
 ## Quickstart
 

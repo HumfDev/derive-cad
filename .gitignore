@@ -27,6 +27,7 @@ htmlcov/
 .vscode/
 
 # Local runtime artifacts — never commit generated CAD output or user config
+validation-snapshots/
 *.step
 *.stl
 *.3mf

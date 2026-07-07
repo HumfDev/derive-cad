@@ -29,7 +29,7 @@ _STUB_BRIEF = Brief(prose="test brief", targets=ValidationTargets(), raw="test b
 
 def _design_dir(tmp_path):
     run_dir = tmp_path / "cube"
-    run_dir.mkdir()
+    run_dir.mkdir(exist_ok=True)
     return run_dir
 
 
@@ -41,6 +41,7 @@ def _config(tmp_path):
         model="gpt-4o-mini",
         working_dir=str(tmp_path),
         enable_snapshot_review=False,
+        max_repair_attempts=1,
     )
 
 
@@ -90,9 +91,9 @@ def test_generate_model_from_prompt_runs_llm_script(monkeypatch, tmp_path, deriv
 def test_generate_model_from_prompt_full_pipeline_with_snapshot_review(
     monkeypatch, tmp_path, derivecad_home
 ):
-    """End-to-end: real sandbox execution and real matplotlib snapshot rendering,
-    with only the LLM-calling seams (brief, codegen, vision review) mocked."""
+    """End-to-end: real sandbox execution; LLM seams and snapshot render mocked."""
     from derive_cad.config.models import Config
+    from derive_cad.llm.review import ReviewResult
 
     config = Config(
         provider="openai",
@@ -105,22 +106,32 @@ def test_generate_model_from_prompt_full_pipeline_with_snapshot_review(
         "derive_cad.llm.generate._request_script",
         lambda _config, _brief, _prompt: VALID_SCRIPT,
     )
+    run_dir = _design_dir(tmp_path)
+    fake_snapshots = [
+        run_dir / "snapshots" / "iso.png",
+        run_dir / "snapshots" / "top_ortho.png",
+    ]
+    for path in fake_snapshots:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"png")
+
     monkeypatch.setattr(
-        "derive_cad.llm.review.complete",
-        lambda *_args, **_kwargs: "PASS\nLooks correct.",
+        "derive_cad.llm.repair_loop.render_snapshots",
+        lambda *_args, **_kwargs: fake_snapshots,
+    )
+    monkeypatch.setattr(
+        "derive_cad.llm.repair_loop.review_snapshots",
+        lambda *_args, **_kwargs: ReviewResult(performed=True, passed=True, notes="ok"),
     )
 
     outcome = generate_model_from_prompt(
         config,
         "a small cube",
-        _design_dir(tmp_path),
+        run_dir,
         timeout_s=60,
     )
     assert outcome.result.step_path.exists()
-    assert len(outcome.snapshot_paths) == 3
-    for path in outcome.snapshot_paths:
-        assert path.exists()
-        assert path.stat().st_size > 0
+    assert len(outcome.snapshot_paths) == 2
     assert outcome.review.performed is True
     assert outcome.review.passed is True
 
@@ -156,3 +167,37 @@ def test_generate_model_raises_on_sandbox_failure(monkeypatch, tmp_path, derivec
             _design_dir(tmp_path),
             timeout_s=60,
         )
+
+
+def test_generate_repair_stalemate(monkeypatch, tmp_path, derivecad_home):
+    """Repeated identical STEP failures stop after repair_stalemate_limit."""
+    from derive_cad.config.models import Config
+
+    config = Config(
+        provider="openai",
+        model="gpt-4o-mini",
+        working_dir=str(tmp_path),
+        enable_snapshot_review=False,
+        repair_stalemate_limit=2,
+    )
+    monkeypatch.setattr("derive_cad.llm.generate.generate_brief", lambda *_: _STUB_BRIEF)
+    monkeypatch.setattr(
+        "derive_cad.llm.generate._request_script",
+        lambda _config, _brief, _prompt: BAD_SCRIPT,
+    )
+    repair_calls = {"n": 0}
+
+    def fake_repair(_config, *, ctx, brief, prompt):
+        repair_calls["n"] += 1
+        return BAD_SCRIPT
+
+    monkeypatch.setattr("derive_cad.llm.generate.request_repair_script", fake_repair)
+
+    with pytest.raises(GenerationError, match="stalemate"):
+        generate_model_from_prompt(
+            config,
+            "a cube",
+            _design_dir(tmp_path),
+            timeout_s=60,
+        )
+    assert repair_calls["n"] == 1

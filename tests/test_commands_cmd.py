@@ -9,6 +9,9 @@ def test_command_catalog_lists_all_commands():
     invocations = {spec.invocation for spec in COMMAND_CATALOG}
     assert invocations == {
         "run",
+        "step",
+        "inspect",
+        "snapshot",
         "init",
         "open recent",
         "open stl",

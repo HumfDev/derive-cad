@@ -27,7 +27,19 @@ def _run_with_prompt() -> None:
 COMMAND_CATALOG: tuple[CommandSpec, ...] = (
     CommandSpec(
         "run",
-        "Generate a CAD model and export it to the configured formats.",
+        "Full SKILL.md workflow — brief, codegen, step, inspect, snapshot, repair.",
+    ),
+    CommandSpec(
+        "step",
+        "Generate STEP/sidecars from model.py (skills/cad/scripts/step).",
+    ),
+    CommandSpec(
+        "inspect",
+        "Inspect STEP geometry — refs, measure, align (skills/cad/scripts/inspect).",
+    ),
+    CommandSpec(
+        "snapshot",
+        "Render snapshots from STEP (requires Viewer GLB sidecars).",
     ),
     CommandSpec(
         "init",
@@ -86,7 +98,7 @@ def _render_command_table() -> None:
         Panel(
             table,
             title="dcad commands",
-            subtitle="Use arrow keys to browse, Enter to run",
+            subtitle="Browse commands; step/inspect/snapshot run from shell",
         )
     )
 
@@ -106,6 +118,7 @@ def commands() -> None:
     choices = [
         questionary.Choice(f"{spec.invocation} — {spec.description}", value=spec.invocation)
         for spec in COMMAND_CATALOG
+        if spec.invocation in command_handlers()
     ]
     selected = questionary.select("Select a command to run:", choices=choices).ask()
     if selected is None:

@@ -16,6 +16,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Prepare vendored CAD skill
+        run: bash scripts/setup-dev.sh
+
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}

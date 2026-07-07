@@ -1,20 +1,33 @@
 """Deterministic comparison of GeometryFacts against a brief's validation targets.
 
-Scope note (deliberate reduction vs. earthtojake/text-to-cad): this replaces that
-project's selector-ref `measure`/`align`/`frame`/`diff` system and its assembly
-positioning/joint checks with one flat bbox + face/solid-count comparison. The
-selector system requires the unvendored `cadpy` library; dcad has no assembly/joint
-model at all. See CONTRIBUTING.md.
+When cadpy is available, optional measure/align checks from the brief JSON are also run
+via skills/cad/scripts/inspect.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 
 from derive_cad.cad.inspect import GeometryFacts
 
 DEFAULT_BBOX_TOLERANCE_PCT = 15.0
 
-ViolationKind = Literal["bbox", "face_count", "solid_count"]
+ViolationKind = Literal["bbox", "face_count", "solid_count", "measure", "align"]
+
+
+@dataclass
+class MeasureCheck:
+    from_ref: str
+    to_ref: str
+    axis: str | None = None
+    expected_mm: float | None = None
+
+
+@dataclass
+class AlignCheck:
+    moving: str
+    target: str
+    mode: str = "flush"
+    axis: str | None = None
 
 
 @dataclass
@@ -26,6 +39,8 @@ class ValidationTargets:
     min_solid_count: int | None = None
     max_solid_count: int | None = None
     notes: str | None = None
+    measure_checks: list[MeasureCheck] = field(default_factory=list)
+    align_checks: list[AlignCheck] = field(default_factory=list)
 
 
 @dataclass
@@ -94,4 +109,66 @@ def check_validation_targets(
                 f"{targets.max_solid_count}",
             )
         )
+    return violations
+
+
+def run_spec_driven_checks(
+    step_path,
+    targets: ValidationTargets,
+    *,
+    cwd,
+    enable_cadpy: bool = True,
+) -> list[Violation]:
+    """Run optional measure/align checks from the brief via cadpy inspect."""
+    if not enable_cadpy or (not targets.measure_checks and not targets.align_checks):
+        return []
+
+    from pathlib import Path
+
+    from derive_cad.cad.inspect import run_align_check, run_measure_check
+
+    violations: list[Violation] = []
+    step = Path(step_path)
+
+    for check in targets.measure_checks:
+        try:
+            output = run_measure_check(
+                step,
+                cwd=Path(cwd),
+                from_ref=check.from_ref,
+                to_ref=check.to_ref,
+                axis=check.axis,
+            )
+            if check.expected_mm is not None and str(check.expected_mm) not in output:
+                violations.append(
+                    Violation(
+                        "measure",
+                        f"measure {check.from_ref} -> {check.to_ref} "
+                        f"expected ~{check.expected_mm}mm; got: {output[:200]}",
+                    )
+                )
+        except Exception as exc:  # noqa: BLE001
+            violations.append(
+                Violation("measure", f"measure check failed for {check.from_ref}: {exc}")
+            )
+
+    for check in targets.align_checks:
+        try:
+            output = run_align_check(
+                step,
+                cwd=Path(cwd),
+                moving=check.moving,
+                target=check.target,
+                mode=check.mode,
+                axis=check.axis,
+            )
+            if "error" in output.lower() or "fail" in output.lower():
+                violations.append(
+                    Violation("align", f"align {check.moving} -> {check.target}: {output[:200]}")
+                )
+        except Exception as exc:  # noqa: BLE001
+            violations.append(
+                Violation("align", f"align check failed for {check.moving}: {exc}")
+            )
+
     return violations

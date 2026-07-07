@@ -1,9 +1,8 @@
 # Minimal build123d script used by integration tests.
 #
 # Uses the return-based gen_step() contract: the script only defines gen_step(),
-# which returns the built geometry. cad/runner.py's run_script() appends the
-# execution/export entrypoint itself (ENTRYPOINT_FOOTER) — this fixture must not
-# define its own __main__ block or call export_step() directly.
+# which returns the built geometry. cad/runner.py invokes skills/cad/scripts/step
+# on model.py — this fixture must not define its own __main__ block.
 
 SAMPLE_BRACKET_SCRIPT = """\
 from build123d import *

@@ -4,8 +4,8 @@ import typer
 from rich.panel import Panel
 from rich.table import Table
 
-from derive_cad.cad.export import export_format
 from derive_cad.cad.inspect import inspect_step
+from derive_cad.cad.runner import export_sidecars
 from derive_cad.cli.setup import ensure_configured
 from derive_cad.config.models import Config
 from derive_cad.llm.generate import GenerationOutcome, generate_model_from_prompt
@@ -13,6 +13,40 @@ from derive_cad.llm.naming import suggest_design_name
 from derive_cad.project.workspace import new_design_dir
 from derive_cad.utils.errors import ConfigError
 from derive_cad.utils.logging import configure_run_logging, console, log_section, logger
+
+
+def _validation_report(config: Config, design_dir: Path, outcome: GenerationOutcome) -> str:
+    result = outcome.result
+    facts = inspect_step(result.step_path)
+    bx, by, bz = facts.bbox_size
+    lines = [
+        "Validation:",
+        "- STEP generation: passed",
+        f"- Solids/assembly: {facts.solid_count} solid(s), {facts.face_count} face(s)",
+        f"- Bounding box: {bx:.1f} x {by:.1f} x {bz:.1f} mm",
+    ]
+    if outcome.inspect_summary and outcome.inspect_summary.planes_summary:
+        lines.append(f"- Major planes/refs: {outcome.inspect_summary.planes_summary[:200]}")
+    else:
+        lines.append("- Major planes/refs: (cadpy inspect unavailable or compact facts only)")
+    if outcome.brief.targets.measure_checks or outcome.brief.targets.align_checks:
+        lines.append("- Feature checks: measure/align targets from brief")
+    else:
+        lines.append("- Feature checks: bbox/face/solid targets only")
+    if outcome.review.performed:
+        verdict = "PASS" if outcome.review.passed else "FAIL"
+        lines.append(f"- Visual review: {verdict} — {outcome.review.notes[:160]}")
+    else:
+        lines.append(f"- Visual review: skipped — {outcome.review.notes}")
+    attempts_label = (
+        f"{outcome.attempts} (unlimited)"
+        if config.max_repair_attempts is None
+        else f"{outcome.attempts}/{config.max_repair_attempts}"
+    )
+    lines.append(f"- Attempts: {attempts_label}")
+    lines.append(f"- Artifacts: {design_dir}")
+    lines.append("- Open: dcad open step · dcad open stl · dcad open recent")
+    return "\n".join(lines)
 
 
 def _export_and_report(
@@ -23,10 +57,16 @@ def _export_and_report(
     result = outcome.result
     facts = inspect_step(result.step_path)
 
-    exported = {}
-    for fmt in config.default_export_formats:
-        out_path = design_dir / f"model.{fmt}"
-        exported[fmt] = export_format(result.step_path, out_path, fmt)
+    exported = dict(result.sidecar_paths)
+    missing_formats = [fmt for fmt in config.default_export_formats if fmt not in exported]
+    if missing_formats:
+        exported.update(
+            export_sidecars(
+                result.script_path,
+                missing_formats,
+                timeout_s=config.sandbox_timeout_s,
+            )
+        )
 
     table = Table(show_header=False, box=None)
     table.add_row("Folder", str(design_dir))
@@ -40,11 +80,12 @@ def _export_and_report(
         f"volume: {facts.volume:.1f} mm³   faces: {facts.face_count}",
     )
     table.add_row("Brief", str(design_dir / "brief.md"))
-    if outcome.validation_violations:
-        table.add_row(
-            "Validation targets",
-            f"[yellow]{len(outcome.validation_violations)} unresolved[/yellow]",
-        )
+    attempts_label = (
+        f"{outcome.attempts} (unlimited)"
+        if config.max_repair_attempts is None
+        else f"{outcome.attempts}/{config.max_repair_attempts}"
+    )
+    table.add_row("Attempts", attempts_label)
     table.add_row(
         "Snapshots",
         ", ".join(str(p) for p in outcome.snapshot_paths) or "[dim]none[/dim]",
@@ -56,9 +97,10 @@ def _export_and_report(
         table.add_row("Visual review", f"[dim]skipped — {outcome.review.notes}[/dim]")
 
     console.print(Panel(table, title="✓ Generation complete", style="green"))
+    console.print(_validation_report(config, design_dir, outcome))
     console.print(
-        "[dim]Open outputs: [bold]dcad open stl[/bold] · "
-        "[bold]dcad open recent[/bold][/dim]"
+        "[dim]Tools: [bold]dcad step[/bold] · [bold]dcad inspect[/bold] · "
+        "[bold]dcad open stl[/bold] · [bold]dcad open recent[/bold][/dim]"
     )
     return outcome
 

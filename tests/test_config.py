@@ -44,3 +44,19 @@ def test_cli_flag_beats_everything(derivecad_home, tmp_path):
 
     resolved = resolve_config(project_dir=project_dir, cli_overrides={"model": "claude-haiku-4-5"})
     assert resolved.model == "claude-haiku-4-5"
+
+
+def test_max_generation_attempts_migrates_to_max_repair_attempts(derivecad_home):
+    import warnings
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        config = Config(max_generation_attempts=7)
+    assert config.max_repair_attempts == 7
+    assert any("max_generation_attempts is deprecated" in str(w.message) for w in caught)
+
+
+def test_default_repair_is_unlimited(derivecad_home):
+    config = load_global_config()
+    assert config.max_repair_attempts is None
+    assert config.repair_stalemate_limit == 5

@@ -1,23 +1,18 @@
-import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Literal
 
-from derive_cad.cad.sandbox import run_isolated
-from derive_cad.project.workspace import python_executable
-from derive_cad.utils.errors import GenerationError
+from derive_cad.skill.runner import run_skill_script_or_raise
+from derive_cad.utils.errors import ExportError, GenerationError
 from derive_cad.utils.logging import logger
 
-# Appended to every LLM-generated script before it's written to model.py. The LLM's
-# contract is only to define `gen_step() -> Part`; dcad owns execution and export
-# itself so the LLM never has to reproduce argv handling or an export_step() call
-# exactly right (a brittle, unnecessary source of format-compliance failures).
-ENTRYPOINT_FOOTER = """
+ExportFormat = Literal["stl", "3mf", "glb"]
 
-if __name__ == "__main__":
-    import sys
-    from build123d import export_step
-    export_step(gen_step(), sys.argv[1])
-"""
+_SIDECAR_FLAGS: dict[ExportFormat, str] = {
+    "stl": "--stl",
+    "3mf": "--3mf",
+    "glb": "--glb",
+}
 
 
 @dataclass
@@ -27,63 +22,118 @@ class RunResult:
     step_path: Path
     stdout: str
     stderr: str
+    sidecar_paths: dict[str, Path] = field(default_factory=dict)
 
 
-def run_script(script_source: str, run_dir: Path, timeout_s: int) -> RunResult:
-    """Write `script_source` (plus a fixed dcad-authored entrypoint footer) to
-    model.py in run_dir and execute it in a fresh, isolated subprocess to produce
-    model.step. Never exec()'d in-process — a crash/hang/segfault in the OCP/OCCT
-    kernel can't take down the CLI.
-    """
+def _write_script(script_source: str, run_dir: Path) -> Path:
     script_path = run_dir / "model.py"
-    step_path = run_dir / "model.step"
-    script_path.write_text(script_source + ENTRYPOINT_FOOTER)
+    script_path.write_text(script_source)
     logger.info("Wrote script to %s (%s bytes)", script_path, len(script_source))
+    return script_path
 
+
+def _sidecar_args(formats: list[str], run_dir: Path) -> tuple[list[str], dict[str, Path]]:
+    args: list[str] = []
+    paths: dict[str, Path] = {}
+    for fmt in formats:
+        try:
+            flag = _SIDECAR_FLAGS[fmt]  # type: ignore[literal-required]
+        except KeyError as exc:
+            raise ExportError(f"Unsupported export format: {fmt!r}") from exc
+        out_path = run_dir / f"model.{fmt}"
+        args.extend([flag, out_path.name])
+        paths[fmt] = out_path
+    return args, paths
+
+
+def _run_step_generation(
+    script_path: Path,
+    step_path: Path,
+    *,
+    timeout_s: int,
+    sidecar_formats: list[str] | None = None,
+) -> tuple[str, str, dict[str, Path]]:
+    """Generate STEP (and optional sidecars) via vendored skills/cad/scripts/step."""
+    args = [script_path.name, "-o", step_path.name]
+    sidecar_paths: dict[str, Path] = {}
+    if sidecar_formats:
+        sidecar_args, sidecar_paths = _sidecar_args(sidecar_formats, script_path.parent)
+        args.extend(sidecar_args)
+    result = run_skill_script_or_raise("step", args, cwd=script_path.parent, timeout_s=timeout_s)
+    return result.stdout, result.stderr, sidecar_paths
+
+
+def run_script(
+    script_source: str,
+    run_dir: Path,
+    timeout_s: int,
+    *,
+    sidecar_formats: list[str] | None = None,
+) -> RunResult:
+    """Write build123d source to model.py and generate model.step via cadpy."""
+    run_dir.mkdir(parents=True, exist_ok=True)
+    script_path = _write_script(script_source, run_dir)
+    step_path = run_dir / "model.step"
     stdout_log = run_dir / "stdout.log"
     stderr_log = run_dir / "stderr.log"
 
-    logger.info("Executing sandbox subprocess timeout_s=%s cwd=%s", timeout_s, run_dir)
+    logger.info(
+        "STEP generation via skills/cad/scripts/step timeout_s=%s cwd=%s sidecars=%s",
+        timeout_s,
+        run_dir,
+        sidecar_formats or [],
+    )
     try:
-        completed = run_isolated(
-            [python_executable(), str(script_path), str(step_path)],
-            cwd=run_dir,
+        stdout, stderr, sidecar_paths = _run_step_generation(
+            script_path,
+            step_path,
             timeout_s=timeout_s,
+            sidecar_formats=sidecar_formats,
         )
-    except subprocess.TimeoutExpired as exc:
-        stdout_log.write_text(exc.stdout or "")
-        stderr_log.write_text(exc.stderr or "")
-        stderr_tail = (exc.stderr or "")[-2000:]
-        logger.error("Sandbox timed out after %ss; stderr tail: %s", timeout_s, stderr_tail)
-        raise GenerationError(
-            f"Generation timed out after {timeout_s}s. See {stderr_log}."
-        ) from exc
+    except Exception as exc:
+        stderr_log.write_text(str(exc))
+        logger.error("STEP generation failed: %s", exc)
+        raise GenerationError(f"STEP generation failed: {exc}") from exc
 
-    stdout_log.write_text(completed.stdout)
-    stderr_log.write_text(completed.stderr)
-
-    if completed.returncode != 0:
-        logger.error(
-            "Sandbox exit code %s; stderr tail: %s",
-            completed.returncode,
-            completed.stderr[-2000:],
-        )
-        raise GenerationError(
-            f"Generation script failed (exit code {completed.returncode}). "
-            f"See {stderr_log}:\n{completed.stderr[-2000:]}"
-        )
+    stdout_log.write_text(stdout)
+    stderr_log.write_text(stderr)
 
     if not step_path.exists():
-        logger.error("Sandbox succeeded but STEP missing at %s", step_path)
+        logger.error("STEP generation succeeded but file missing at %s", step_path)
         raise GenerationError(
-            f"Generation script exited successfully but did not produce {step_path}."
+            f"STEP generation did not produce {step_path}. See {stderr_log}."
         )
 
-    logger.info("Sandbox produced STEP at %s", step_path)
+    for fmt, path in sidecar_paths.items():
+        if not path.exists():
+            raise GenerationError(f"STEP generation did not produce sidecar {path} ({fmt}).")
+
+    logger.info("Produced STEP at %s", step_path)
     return RunResult(
         run_dir=run_dir,
         script_path=script_path,
         step_path=step_path,
-        stdout=completed.stdout,
-        stderr=completed.stderr,
+        stdout=stdout,
+        stderr=stderr,
+        sidecar_paths=sidecar_paths,
     )
+
+
+def export_sidecars(
+    script_path: Path,
+    formats: list[str],
+    *,
+    timeout_s: int,
+) -> dict[str, Path]:
+    """Export STL/3MF/GLB sidecars from an existing model.py via cadpy step."""
+    if not formats:
+        return {}
+    run_dir = script_path.parent
+    step_path = run_dir / "model.step"
+    sidecar_args, sidecar_paths = _sidecar_args(formats, run_dir)
+    args = [script_path.name, "-o", step_path.name, *sidecar_args]
+    run_skill_script_or_raise("step", args, cwd=run_dir, timeout_s=timeout_s)
+    missing = [str(path) for path in sidecar_paths.values() if not path.exists()]
+    if missing:
+        raise ExportError(f"Export did not produce: {', '.join(missing)}")
+    return sidecar_paths

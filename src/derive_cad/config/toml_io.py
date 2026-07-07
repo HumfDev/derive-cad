@@ -1,13 +1,8 @@
-import sys
+import tomllib
 from pathlib import Path
 from typing import Any
 
 import tomli_w
-
-if sys.version_info >= (3, 11):
-    import tomllib
-else:
-    import tomli as tomllib
 
 
 def read_toml(path: Path) -> dict[str, Any]:

@@ -85,3 +85,37 @@ def test_write_brief_md_writes_raw_verbatim(tmp_path):
     path = write_brief_md(tmp_path, brief)
     assert path == tmp_path / "brief.md"
     assert path.read_text().strip() == WELL_FORMED.strip()
+
+
+BRIEF_WITH_STRAY_PYTHON = """\
+CAD brief:
+- Model: phone_stand
+- Task type: new part
+
+```python
+from build123d import *
+
+with BuildPart() as phone_stand:
+    Box(1, 1, 1)
+
+if __name__ == "__main__":
+    pass
+```
+
+```json
+{
+  "bbox_min": null,
+  "bbox_max": [70, 90, 72],
+  "min_solid_count": 1
+}
+```
+"""
+
+
+def test_parse_brief_strips_stray_python_from_prose():
+    brief = parse_brief(BRIEF_WITH_STRAY_PYTHON)
+    assert brief.targets.bbox_max == (70.0, 90.0, 72.0)
+    assert "phone_stand" in brief.prose
+    assert "build123d" not in brief.prose
+    assert "__main__" not in brief.prose
+    assert "```" not in brief.prose

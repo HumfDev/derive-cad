@@ -20,6 +20,9 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
+`dcad` declares the vendored `packages/cadpy` as a path dependency — one install command
+is enough. Do not also pass `pip install -e packages/cadpy` in the same invocation.
+
 Run lint and tests before opening a PR:
 
 ```bash
@@ -29,11 +32,12 @@ pytest -q
 
 `pytest` includes a marked `integration` suite (`tests/test_cad_runner.py`,
 `tests/test_export.py`, `tests/test_render.py`) that runs the real build123d subprocess
-sandbox (and, for `test_render.py`, a real matplotlib render) end-to-end. These are slower
+sandbox (and, for `test_render.py`, a real Playwright snapshot render) end-to-end. These are slower
 than the unit tests but are the ones that actually prove the CAD pipeline works — don't skip
 them locally before submitting a PR that touches `cad/`.
 
-For a PR that changes prompts (`llm/prompts.py`), repair guidance (`llm/repair.py`), or the
+For a PR that changes prompts (`llm/prompts.py`), upstream repair guidance
+(`skills/cad/references/repair-loop.md`), or the
 brief's validation-target schema (`llm/brief.py`, `cad/validation.py`), also run
 `python benchmarks/run_benchmarks.py` against a real configured provider — see
 `benchmarks/cases.py` and the "What we ported" section below.
@@ -65,38 +69,46 @@ experience, not enabling something otherwise impossible.
 
 ## Adding a new export format
 
-Add a `step_to_<format>` function to `src/derive_cad/cad/export.py` built directly on
-build123d's own exporter APIs, and register it in `_EXPORTERS`.
+Register the format in `src/derive_cad/cad/runner.py` (`_SIDECAR_FLAGS`) if
+`skills/cad/scripts/step` supports a matching `--<format>` sidecar flag. Exports run through
+cadpy during `dcad run` via `export_sidecars()` or inline `run_script(..., sidecar_formats=...)`.
 
-## A note on the reference project's `cadpy` package
+## Vendored `skills/cad` and `packages/cadpy`
 
-`earthtojake/text-to-cad` (a different kind of project — an agent *skill*, not a standalone
-CLI) has an internal `packages/cadpy` wrapper around STEP/STL/GLB export and geometry
-inspection. We deliberately did **not** vendor it: it's unpublished (no PyPI release, no
-license/API-stability guarantee) and its build requires monorepo-only tooling it's coupled
-to. `cad/export.py` and `cad/inspect.py` are a from-scratch reimplementation directly against
-build123d's public APIs instead. Please don't re-propose vendoring it.
+This repo vendors the full upstream CAD skill from
+[earthtojake/text-to-cad](https://github.com/earthtojake/text-to-cad):
 
-## What we ported from earthtojake/text-to-cad's skill docs, and what we didn't
+- `skills/cad/` — `SKILL.md`, `references/*.md`, `scripts/step`, `scripts/inspect`, `scripts/snapshot`
+- `packages/cadpy/` — STEP generation, selector inspection, assemblies
+- `skills/cad/scripts/packages/cadpy` → `../../../../packages/cadpy` (symlink)
 
-That project's `skills/cad/SKILL.md` and `references/*.md` document a staged workflow for
-agentic coding tools (Claude Code, Codex) that already have their own model and file/bash
-tools: classify the task, write a CAD brief before coding, generate, validate
-deterministically, review a mandatory snapshot, and repair failures by classified category
-rather than a generic retry. `llm/brief.py`, `cad/validation.py`, `cad/render.py`,
-`llm/review.py`, and `llm/repair.py` mirror that *process* — guidance text adapted, not
-copied verbatim, and re-implemented against dcad's own litellm-based architecture (that
-project has no LLM API layer of its own; its "LLM" is whichever coding agent is already
-running).
+Pinned upstream commit: `skills/cad/UPSTREAM_SHA`.
 
-Deliberately not ported, because they require the unvendored `cadpy` selector system or an
-assembly/joint model dcad doesn't have:
+`dcad run` orchestrates the SKILL.md 10-step workflow. Low-level tools are exposed as
+`dcad step`, `dcad inspect`, and `dcad snapshot` (passthrough to vendored scripts).
 
-- Selector-ref `measure`/`align`/`frame`/`diff` checks — dcad has one flat bbox/face/solid
-  -count comparison against brief-derived validation targets instead (`cad/validation.py`).
-- Assembly positioning/joint-mismatch repair category.
-- Selector-fragility repair category.
-- The purchasable-parts library check (no such library in dcad).
+Sync from upstream when needed:
+
+```bash
+git clone https://github.com/earthtojake/text-to-cad.git /tmp/text-to-cad-upstream
+cp -R /tmp/text-to-cad-upstream/skills/cad ./skills/cad
+cp -R /tmp/text-to-cad-upstream/packages/cadpy ./packages/cadpy
+ln -sf ../../../../packages/cadpy skills/cad/scripts/packages/cadpy
+```
+
+## What we ported from earthtojake/text-to-cad's skill docs
+
+That project's `skills/cad/SKILL.md` and `references/*.md` document a staged workflow:
+classify the task, write a CAD brief before coding, generate via `scripts/step`, validate
+with `scripts/inspect`, review snapshots, and repair failures per `repair-loop.md`.
+`llm/brief.py`, `cad/validation.py`, `cad/render.py`, and `llm/review.py` implement this
+against dcad's litellm-based CLI; repair prompts load the vendored `repair-loop.md` directly.
+
+**Not vendored:** `viewer/`, `skills/cad-viewer` (no embedded CAD Viewer UI). `dcad run`
+uses Playwright snapshots via `skills/cad/scripts/snapshot` for vision review; `dcad open` opens files in the OS default app.
+
+**Stretch / optional:** `skills/step-parts` purchasable-parts library (`llm/step_parts.py`
+logs when absent). Assembly codegen guidance is in prompts via `references/positioning.md`.
 
 Two additional, smaller pieces were added alongside the port, in response to review of an
 earlier scaffold plan for this repo:
