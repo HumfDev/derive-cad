@@ -5,11 +5,12 @@ import typer
 from derive_cad.__about__ import __version__
 from derive_cad.cli.commands_cmd import commands
 from derive_cad.cli.init_cmd import init
-from derive_cad.cli.inspect_cmd import inspect_app
+from derive_cad.cli.inspect_cmd import inspect
 from derive_cad.cli.open_cmd import open_app
+from derive_cad.cli.passthrough import PASSTHROUGH_CONTEXT
 from derive_cad.cli.run_cmd import run
-from derive_cad.cli.snapshot_cmd import snapshot_app
-from derive_cad.cli.step_cmd import step_app
+from derive_cad.cli.snapshot_cmd import snapshot
+from derive_cad.cli.step_cmd import step
 from derive_cad.utils.errors import DeriveCadError
 from derive_cad.utils.logging import error_console
 
@@ -25,9 +26,9 @@ app = typer.Typer(
 app.command(name="init")(init)
 app.command(name="run")(run)
 app.command(name="commands")(commands)
-app.add_typer(step_app, name="step")
-app.add_typer(inspect_app, name="inspect")
-app.add_typer(snapshot_app, name="snapshot")
+app.command(name="step", context_settings=PASSTHROUGH_CONTEXT)(step)
+app.command(name="inspect", context_settings=PASSTHROUGH_CONTEXT)(inspect)
+app.command(name="snapshot", context_settings=PASSTHROUGH_CONTEXT)(snapshot)
 app.add_typer(open_app, name="open")
 
 

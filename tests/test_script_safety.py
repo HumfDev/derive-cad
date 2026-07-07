@@ -18,6 +18,19 @@ def test_allowed_imports_pass():
     assert check_script_safety(ALLOWED_SCRIPT) == []
 
 
+def test_cadpy_assembly_import_allowed():
+    script = """\
+from build123d import *
+from cadpy.assembly import AssemblyHelper
+
+
+def gen_step():
+    asm = AssemblyHelper("test")
+    return asm.build()
+"""
+    assert check_script_safety(script) == []
+
+
 def test_disallowed_os_import_flagged():
     script = "import os\nfrom build123d import *\n"
     violations = check_script_safety(script)

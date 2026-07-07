@@ -17,12 +17,12 @@ on the OpenCASCADE kernel — which is executed via cadpy to produce a STEP file
 optional sidecar exports (STL, 3MF, GLB).
 
 The result is checked against the brief's validation targets (bounding box, face/solid
-count) and, unless `enable_snapshot_review = false` or the configured model has no known
-vision support, a rendered snapshot of the result (`snapshots/*.png`) is reviewed by the
-same LLM before the run is accepted. Failures are classified into a specific category
-(syntax error, invalid geometry, wrong scale, missing feature, visual defect, timeout) and
-Failures are repaired per the vendored `skills/cad/references/repair-loop.md` — the LLM
-reads the failure output, classifies it, and applies the smallest source fix before rerunning.
+count). When enabled, a rendered snapshot (`snapshots/*.png`) is also reviewed by the
+same LLM; that visual review is **advisory** — deterministic checks decide pass/fail,
+and vision findings are logged without blocking acceptance when validation passes.
+Deterministic failures are classified and repaired per the vendored
+`skills/cad/references/repair-loop.md` — the LLM reads the failure output, classifies it,
+and applies the smallest source fix before rerunning.
 
 ## CAD tools (upstream-shaped CLI)
 
@@ -46,6 +46,17 @@ pipx install dcad
 
 Requires Python 3.11–3.14. [pipx](https://pipx.pypa.io/) keeps `dcad` and its dependencies
 (including the OpenCASCADE binding) isolated from your other Python projects.
+
+If `pipx` is not installed yet:
+
+```bash
+brew install pipx
+pipx ensurepath
+```
+
+> **First release:** `dcad` is published to PyPI when a GitHub release is cut. Until then,
+> install from a built wheel with `pipx install /path/to/dcad-*.whl` or follow the source
+> setup below.
 
 **From source** (contributors):
 
@@ -126,8 +137,9 @@ STEP, STL, 3MF, GLB.
 - Precedence: CLI flags > per-project config > env vars (API keys only) > global config > defaults
 - `enable_snapshot_review` (default `true`): set to `false` to skip rendering and reviewing
   a snapshot of each result — the release valve if the extra LLM call's cost/latency isn't
-  worth it for your use case. Vision review is also automatically skipped (and reported as
-  such) for models with no known vision support.
+  worth it for your use case. When enabled, vision findings are logged but do not block
+  acceptance if deterministic validation already passed. Vision review is also automatically
+  skipped (and reported as such) for models with no known vision support.
 - `bbox_tolerance_pct` (default `15.0`): tolerance applied to a brief's bounding-box
   validation targets before a mismatch is treated as a failure.
 

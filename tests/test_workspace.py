@@ -17,7 +17,7 @@ def test_provider_models_include_default():
 def test_no_retired_gemini_models():
     gemini_models = PROVIDERS["gemini"].models
     assert "gemini/gemini-2.0-flash" not in gemini_models
-    assert PROVIDERS["gemini"].default_model == "gemini/gemini-2.5-flash"
+    assert PROVIDERS["gemini"].default_model == "gemini/gemini-3.5-flash"
 
 
 def test_openable_artifacts_cover_export_formats():

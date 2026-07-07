@@ -13,6 +13,7 @@ import ast
 ALLOWED_MODULES = frozenset(
     {
         "build123d",
+        "cadpy",
         "math",
         "itertools",
         "dataclasses",

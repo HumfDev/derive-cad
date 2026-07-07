@@ -34,7 +34,7 @@ def _validation_report(config: Config, design_dir: Path, outcome: GenerationOutc
     else:
         lines.append("- Feature checks: bbox/face/solid targets only")
     if outcome.review.performed:
-        verdict = "PASS" if outcome.review.passed else "FAIL"
+        verdict = "PASS" if outcome.review.passed else "advisory FAIL"
         lines.append(f"- Visual review: {verdict} — {outcome.review.notes[:160]}")
     else:
         lines.append(f"- Visual review: skipped — {outcome.review.notes}")

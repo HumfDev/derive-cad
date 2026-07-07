@@ -9,7 +9,7 @@ from derive_cad.cad.validation import Violation, check_validation_targets, run_s
 from derive_cad.config.models import Config
 from derive_cad.llm.brief import Brief, generate_brief, write_brief_md
 from derive_cad.llm.client import complete, extract_python_code
-from derive_cad.llm.prompts import CAD_CODEGEN_USER_PROMPT, CAD_SYSTEM_PROMPT
+from derive_cad.llm.prompts import CAD_CODEGEN_USER_PROMPT, cad_system_prompt
 from derive_cad.llm.repair_loop import (
     PipelineStage,
     RepairContext,
@@ -63,10 +63,12 @@ def _generate_brief_or_fallback(config: Config, prompt: str, run_dir: Path) -> B
 
 
 def _request_script(config: Config, brief: Brief, prompt: str) -> str:
+    task_label = "assembly" if brief.is_assembly else "part"
+    logger.info("Stage 6/10 — Codegen (%s)", task_label)
     raw = complete(
         config,
         [
-            {"role": "system", "content": CAD_SYSTEM_PROMPT},
+            {"role": "system", "content": cad_system_prompt(is_assembly=brief.is_assembly)},
             {
                 "role": "user",
                 "content": CAD_CODEGEN_USER_PROMPT.format(brief=brief.prose, prompt=prompt),
@@ -177,7 +179,6 @@ def generate_model_from_prompt(
         logger.info("Attempt %s — pipeline cycle", attempt)
 
         if attempt == 1:
-            logger.info("Stage 6/10 — Codegen")
             script = _request_script(config, brief, prompt)
         else:
             ctx = RepairContext(
@@ -263,13 +264,14 @@ def generate_model_from_prompt(
             )
 
         if review.performed and not review.passed:
-            failed_stage = PipelineStage.SNAPSHOT
-            failure_message = f"Visual review failed: {review.notes}"
-            stderr = result.stderr
-            append_repair_log(repair_log, f"SNAPSHOT failure: {failure_message}")
-            if _attempt_limit_reached(config, attempt):
-                raise GenerationError(failure_message)
-            continue
+            logger.warning(
+                "Visual review advisory FAIL (deterministic validation passed): %s",
+                review.notes[:500],
+            )
+            append_repair_log(
+                repair_log,
+                f"SNAPSHOT advisory (not blocking): {review.notes[:500]}",
+            )
 
         logger.info("Generation succeeded on attempt %s", attempt)
         return GenerationOutcome(

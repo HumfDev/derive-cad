@@ -16,12 +16,12 @@ PROVIDERS: dict[str, ProviderInfo] = {
         id="openai",
         label="OpenAI",
         env_var="OPENAI_API_KEY",
-        default_model="gpt-4o-mini",
+        default_model="gpt-5.4-mini",
         models=(
-            "gpt-4o-mini",
-            "gpt-4o",
-            "gpt-4.1-mini",
-            "gpt-4.1",
+            "gpt-5.4-nano",
+            "gpt-5.4-mini",
+            "gpt-5.4",
+            "gpt-5.4-pro",
         ),
     ),
     "anthropic": ProviderInfo(
@@ -31,19 +31,21 @@ PROVIDERS: dict[str, ProviderInfo] = {
         default_model="claude-haiku-4-5",
         models=(
             "claude-haiku-4-5",
-            "claude-sonnet-4-5",
-            "claude-opus-4-5",
+            "claude-sonnet-5",
+            "claude-opus-4-8",
+            "claude-fable-5",
         ),
     ),
     "gemini": ProviderInfo(
         id="gemini",
         label="Google Gemini",
         env_var="GEMINI_API_KEY",
-        default_model="gemini/gemini-2.5-flash",
+        default_model="gemini/gemini-3.5-flash",
         models=(
+            "gemini/gemini-3.1-flash-lite",
             "gemini/gemini-2.5-flash",
             "gemini/gemini-3.5-flash",
-            "gemini/gemini-flash-latest",
+            "gemini/gemini-3.1-pro-preview",
         ),
     ),
     "groq": ProviderInfo(
@@ -52,9 +54,10 @@ PROVIDERS: dict[str, ProviderInfo] = {
         env_var="GROQ_API_KEY",
         default_model="groq/llama-3.3-70b-versatile",
         models=(
-            "groq/llama-3.3-70b-versatile",
             "groq/llama-3.1-8b-instant",
-            "groq/mixtral-8x7b-32768",
+            "groq/meta-llama/llama-4-scout-17b-16e-instruct",
+            "groq/llama-3.3-70b-versatile",
+            "groq/openai/gpt-oss-120b",
         ),
     ),
     "ollama": ProviderInfo(
@@ -63,9 +66,9 @@ PROVIDERS: dict[str, ProviderInfo] = {
         env_var=None,
         default_model="ollama/llama3.3",
         models=(
-            "ollama/llama3.3",
             "ollama/llama3.2",
-            "ollama/mistral",
+            "ollama/llama3.3",
+            "ollama/llama4",
         ),
         supports_tool_calling=False,
     ),

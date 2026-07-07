@@ -10,7 +10,19 @@ The PyPI package name is **`dcad`** (users install with `pipx install dcad`).
 4. The [Publish workflow](.github/workflows/publish.yml) uploads the wheel to PyPI when the
    release is published.
 
-Set `PYPI_API_TOKEN` in the repo's `pypi` GitHub environment before the first release.
+Set `PYPI_API_TOKEN` in the repo's `PYPI_API_TOKEN` GitHub environment before the first release.
+
+To build and smoke-test locally:
+
+```bash
+bash scripts/publish.sh
+```
+
+To upload manually (requires `PYPI_API_TOKEN`):
+
+```bash
+PYPI_API_TOKEN=... bash scripts/publish.sh --upload
+```
 
 ## Dev setup
 
@@ -20,8 +32,8 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
-`dcad` declares the vendored `packages/cadpy` as a path dependency — one install command
-is enough. Do not also pass `pip install -e packages/cadpy` in the same invocation.
+`dcad` bundles the vendored `packages/cadpy` and `skills/cad` inside the wheel — one install
+command is enough.
 
 Run lint and tests before opening a PR:
 
@@ -108,7 +120,9 @@ against dcad's litellm-based CLI; repair prompts load the vendored `repair-loop.
 uses Playwright snapshots via `skills/cad/scripts/snapshot` for vision review; `dcad open` opens files in the OS default app.
 
 **Stretch / optional:** `skills/step-parts` purchasable-parts library (`llm/step_parts.py`
-logs when absent). Assembly codegen guidance is in prompts via `references/positioning.md`.
+logs when absent). Assembly codegen and repair prompts load `references/positioning.md`
+when the CAD brief `Task type` indicates an assembly, matching the upstream SKILL.md
+reference triggers.
 
 Two additional, smaller pieces were added alongside the port, in response to review of an
 earlier scaffold plan for this repo:

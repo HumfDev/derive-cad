@@ -19,6 +19,7 @@ from derive_cad.llm.prompts import CAD_BRIEF_PROMPT
 
 _JSON_FENCE = re.compile(r"```json\s*\n(.*?)```", re.DOTALL | re.IGNORECASE)
 _CODE_FENCE = re.compile(r"```(?:\w+)?\s*\n.*?```", re.DOTALL | re.IGNORECASE)
+_TASK_TYPE_RE = re.compile(r"^\s*-\s*Task type:\s*(.+)$", re.MULTILINE | re.IGNORECASE)
 
 
 @dataclass
@@ -26,6 +27,14 @@ class Brief:
     prose: str  # brief text; JSON and code fences stripped — fed into codegen/repair prompts
     targets: ValidationTargets  # all-None if parsing failed or the block was absent
     raw: str  # full unparsed LLM response — persisted verbatim to brief.md
+
+    @property
+    def is_assembly(self) -> bool:
+        """True when the brief Task type line indicates an assembly (cad-brief.md)."""
+        match = _TASK_TYPE_RE.search(self.prose)
+        if match is None:
+            return False
+        return "assembly" in match.group(1).lower()
 
 
 def _as_triplet(value: object) -> tuple[float, float, float] | None:

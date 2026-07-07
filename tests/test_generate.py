@@ -26,6 +26,12 @@ def gen_step() -> Part:
 
 _STUB_BRIEF = Brief(prose="test brief", targets=ValidationTargets(), raw="test brief")
 
+_ASSEMBLY_BRIEF = Brief(
+    prose="CAD brief:\n- Task type: assembly\n",
+    targets=ValidationTargets(),
+    raw="CAD brief:\n- Task type: assembly\n",
+)
+
 
 def _design_dir(tmp_path):
     run_dir = tmp_path / "cube"
@@ -87,6 +93,20 @@ def test_generate_model_from_prompt_runs_llm_script(monkeypatch, tmp_path, deriv
     assert not outcome.review.performed
 
 
+def test_request_script_uses_assembly_codegen_prompt(monkeypatch, tmp_path):
+    from derive_cad.llm.generate import _request_script
+
+    captured: dict[str, str] = {}
+
+    def fake_complete(_config, messages, *, log_label):
+        captured["system"] = messages[0]["content"]
+        return VALID_SCRIPT
+
+    monkeypatch.setattr("derive_cad.llm.generate.complete", fake_complete)
+    _request_script(_config(tmp_path), _ASSEMBLY_BRIEF, "two-piece enclosure")
+    assert "AssemblyHelper pattern" in captured["system"]
+
+
 @pytest.mark.integration
 def test_generate_model_from_prompt_full_pipeline_with_snapshot_review(
     monkeypatch, tmp_path, derivecad_home
@@ -134,6 +154,103 @@ def test_generate_model_from_prompt_full_pipeline_with_snapshot_review(
     assert len(outcome.snapshot_paths) == 2
     assert outcome.review.performed is True
     assert outcome.review.passed is True
+
+
+def test_generate_accepts_advisory_visual_fail(monkeypatch, tmp_path, derivecad_home):
+    """Vision FAIL is advisory when deterministic validation passes."""
+    from derive_cad.config.models import Config
+    from derive_cad.llm.review import ReviewResult
+
+    config = Config(
+        provider="openai",
+        model="gpt-4o-mini",
+        working_dir=str(tmp_path),
+        enable_snapshot_review=True,
+    )
+    monkeypatch.setattr("derive_cad.llm.generate.generate_brief", lambda *_: _STUB_BRIEF)
+    monkeypatch.setattr(
+        "derive_cad.llm.generate._request_script",
+        lambda _config, _brief, _prompt: VALID_SCRIPT,
+    )
+    run_dir = _design_dir(tmp_path)
+    fake_snapshots = [run_dir / "snapshots" / "iso.png"]
+    fake_snapshots[0].parent.mkdir(parents=True, exist_ok=True)
+    fake_snapshots[0].write_bytes(b"png")
+
+    monkeypatch.setattr(
+        "derive_cad.llm.repair_loop.render_snapshots",
+        lambda *_args, **_kwargs: fake_snapshots,
+    )
+    monkeypatch.setattr(
+        "derive_cad.llm.repair_loop.review_snapshots",
+        lambda *_args, **_kwargs: ReviewResult(
+            performed=True,
+            passed=False,
+            notes="hole pattern looks asymmetric",
+        ),
+    )
+
+    outcome = generate_model_from_prompt(
+        config,
+        "a small cube",
+        run_dir,
+        timeout_s=60,
+    )
+    assert outcome.attempts == 1
+    assert outcome.review.performed is True
+    assert outcome.review.passed is False
+    assert outcome.result.step_path.exists()
+
+
+def test_generate_repair_reruns_step_when_script_changes(monkeypatch, tmp_path, derivecad_home):
+    from derive_cad.cad.validation import Violation
+    from derive_cad.config.models import Config
+
+    config = Config(
+        provider="openai",
+        model="gpt-4o-mini",
+        working_dir=str(tmp_path),
+        enable_snapshot_review=False,
+        max_repair_attempts=2,
+    )
+    monkeypatch.setattr("derive_cad.llm.generate.generate_brief", lambda *_: _STUB_BRIEF)
+    monkeypatch.setattr(
+        "derive_cad.llm.generate._request_script",
+        lambda _config, _brief, _prompt: VALID_SCRIPT,
+    )
+
+    repaired_script = VALID_SCRIPT.replace("Box(10, 10, 10)", "Box(12, 12, 12)")
+    step_calls = {"n": 0}
+    validate_calls = {"n": 0}
+    run_dir = _design_dir(tmp_path)
+
+    def fake_run_step_stage(script, *, run_dir, timeout_s, prev_result, repair_log):
+        step_calls["n"] += 1
+        from derive_cad.cad.runner import run_script
+
+        return run_script(script, run_dir=run_dir, timeout_s=timeout_s)
+
+    def fake_validate(_config, _brief, result):
+        validate_calls["n"] += 1
+        if validate_calls["n"] == 1:
+            return [Violation("bbox", "too big")], None
+        return [], None
+
+    monkeypatch.setattr("derive_cad.llm.generate.run_step_stage", fake_run_step_stage)
+    monkeypatch.setattr("derive_cad.llm.generate._validate_generated_model", fake_validate)
+    monkeypatch.setattr(
+        "derive_cad.llm.generate.request_repair_script",
+        lambda _config, *, ctx, brief, prompt: repaired_script,
+    )
+
+    outcome = generate_model_from_prompt(
+        config,
+        "a small cube",
+        run_dir,
+        timeout_s=60,
+    )
+    assert outcome.attempts == 2
+    assert step_calls["n"] == 2
 
 
 def test_generate_model_raises_on_invalid_structure(monkeypatch, tmp_path, derivecad_home):

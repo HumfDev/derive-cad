@@ -49,6 +49,7 @@ def test_classify_failure_syntax():
 def test_rerun_chain_labels():
     assert "scripts/step" in rerun_chain_label(PipelineStage.STEP)
     assert rerun_chain_label(PipelineStage.SNAPSHOT) == "snapshot"
+    assert "scripts/step" in rerun_chain_label(PipelineStage.SNAPSHOT, script_changed=True)
     assert "inspect refs" in rerun_chain_label(PipelineStage.TARGETS)
 
 
@@ -57,6 +58,7 @@ def test_needs_step_rerun_rules():
     assert needs_step_rerun(PipelineStage.TARGETS, script_changed=False) is False
     assert needs_step_rerun(PipelineStage.TARGETS, script_changed=True) is True
     assert needs_step_rerun(PipelineStage.SNAPSHOT, script_changed=False) is False
+    assert needs_step_rerun(PipelineStage.SNAPSHOT, script_changed=True) is True
 
 
 def test_validation_failure_stage_targets():
@@ -86,13 +88,43 @@ def test_stalemate_signature_changes_with_stage():
     assert a != b
 
 
-def test_classify_snapshot_stage():
+def test_classify_snapshot_semantic_failure():
     ctx = RepairContext(
         failed_stage=PipelineStage.SNAPSHOT,
         failure_message="Visual review failed",
         stderr="",
         violations=[],
         review=ReviewResult(performed=True, passed=False, notes="missing hole"),
+        script="",
+        step_path=None,
+    )
+    assert classify_failure(ctx) == "Missing feature"
+
+
+def test_classify_snapshot_positioning_failure():
+    ctx = RepairContext(
+        failed_stage=PipelineStage.SNAPSHOT,
+        failure_message="Visual review failed",
+        stderr="",
+        violations=[],
+        review=ReviewResult(
+            performed=True,
+            passed=False,
+            notes="hole pattern misaligned along joint axis",
+        ),
+        script="",
+        step_path=None,
+    )
+    assert classify_failure(ctx) == "Positioning or joint mismatch"
+
+
+def test_classify_snapshot_infra_failure():
+    ctx = RepairContext(
+        failed_stage=PipelineStage.SNAPSHOT,
+        failure_message="Snapshot render failed: glb sidecar missing",
+        stderr="playwright timeout",
+        violations=[],
+        review=None,
         script="",
         step_path=None,
     )

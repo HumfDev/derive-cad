@@ -87,6 +87,50 @@ def test_write_brief_md_writes_raw_verbatim(tmp_path):
     assert path.read_text().strip() == WELL_FORMED.strip()
 
 
+ASSEMBLY_BRIEF = """\
+CAD brief:
+- Model: enclosure assembly
+- Task type: assembly (two parts: base and lid)
+- Units: millimeters
+
+```json
+{
+  "bbox_min": null,
+  "bbox_max": [120, 80, 35],
+  "min_solid_count": 2,
+  "max_solid_count": 2
+}
+```
+"""
+
+
+PART_BRIEF = """\
+CAD brief:
+- Model: mounting_plate
+- Task type: new part
+- Units: millimeters
+
+```json
+{}
+```
+"""
+
+
+def test_parse_brief_is_assembly_true():
+    brief = parse_brief(ASSEMBLY_BRIEF)
+    assert brief.is_assembly is True
+
+
+def test_parse_brief_is_assembly_false_for_part():
+    brief = parse_brief(PART_BRIEF)
+    assert brief.is_assembly is False
+
+
+def test_parse_brief_is_assembly_false_when_task_type_missing():
+    brief = parse_brief(WELL_FORMED)
+    assert brief.is_assembly is False
+
+
 BRIEF_WITH_STRAY_PYTHON = """\
 CAD brief:
 - Model: phone_stand

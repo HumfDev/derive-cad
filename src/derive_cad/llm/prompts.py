@@ -13,7 +13,37 @@ def _load_reference(name: str) -> str:
         return ""
 
 
-CAD_SYSTEM_PROMPT = """\
+_CODEGEN_OUTPUT_CONTRACT = """\
+Output format (strict):
+- Your response MUST be a complete Python script.
+- Start with `from build123d import *` and define `def gen_step()` returning the STEP-ready
+  shape or labeled compound (see step-generation.md).
+- Do not call export_step() or write an `if __name__ == "__main__"` block — skills/cad/scripts/step
+  handles execution and export.
+- The script MUST be complete and syntactically valid Python.
+- Your entire response must be the Python script and nothing else.
+- Do not write explanations outside the code.
+- Prefer starting directly with `from build123d import *` (no markdown fence). If you use a
+  ```python fence, you MUST include the closing ``` on its own line after the last line of code.
+"""
+
+_REPAIR_OUTPUT_CONTRACT = """\
+Output contract:
+- Return ONLY a complete replacement Python script.
+- Start with `from build123d import *` and define `def gen_step()` returning the STEP-ready
+  shape or labeled compound.
+- Do not call export_step() or add `if __name__ == "__main__"` — skills/cad/scripts/step
+  handles execution and export.
+- Apply the smallest responsible source change for the classified failure, then the full
+  script will be rerun through scripts/step and validation.
+"""
+
+
+@lru_cache(maxsize=2)
+def cad_system_prompt(*, is_assembly: bool = False) -> str:
+    """Codegen system prompt with upstream reference docs per SKILL.md triggers."""
+    sections = [
+        """\
 You are a CAD code generator. Write complete, runnable Python scripts using build123d.
 
 You will receive a CAD brief in the user message — dimensions, features, units, and
@@ -22,45 +52,56 @@ or second-guess it.
 
 Rules:
 - Start with: from build123d import *
-- Define gen_step() -> Part that creates and returns the requested 3D solid model
+- Define def gen_step() that returns the STEP-ready shape or labeled compound
 - Do not call export_step() yourself and do not write an
   `if __name__ == "__main__"` block — skills/cad/scripts/step handles execution and export.
 - Use BuildPart, BuildSketch, extrude, fillet, revolve, etc. as needed
 - Order operations: base solid, major features, subtractive cuts, fillets/chamfers last
 - Keep geometry solid and manufacturable (no zero-thickness shells)
 - Use named parameters and verbose native labels on major features
-- For assemblies with separate manufactured parts, use cadpy.assembly.AssemblyHelper
-  with part-local frames and build123d joints when mating relationships matter
-
-Modeling patterns (from skills/cad/references/build123d-modeling.md):
-""" + _load_reference("build123d-modeling.md") + """
-
-Output format (strict):
-- Your response MUST be a complete Python script: import, blank line, def gen_step() -> Part,
-  complete geometry logic, and `return part.part` (or equivalent return of the built Part).
-- The script MUST be complete and syntactically valid Python.
-- Your entire response must be the Python script and nothing else.
-- Do not write explanations outside the code.
-- Prefer starting directly with `from build123d import *` (no markdown fence). If you use a
-  ```python fence, you MUST include the closing ``` on its own line after the last line of code.
-
-Example shape (adapt dimensions/features to the brief):
-
-```python
-from build123d import *
+""",
+        "Modeling patterns (skills/cad/references/build123d-modeling.md):\n"
+        + _load_reference("build123d-modeling.md"),
+    ]
+    if is_assembly:
+        sections.append(
+            "Assembly positioning (skills/cad/references/positioning.md):\n"
+            + _load_reference("positioning.md")
+        )
+    sections.append(
+        "STEP generation (skills/cad/references/step-generation.md):\n"
+        + _load_reference("step-generation.md")
+    )
+    sections.append(_CODEGEN_OUTPUT_CONTRACT)
+    return "\n\n".join(sections)
 
 
-def gen_step() -> Part:
-    with BuildPart() as part:
-        with BuildSketch() as base:
-            Rectangle(60, 40)
-            fillet(base.vertices(), radius=4)
-        extrude(amount=6)
-        with Locations((-20, -15), (20, -15), (-20, 15), (20, 15)):
-            Hole(radius=3)
-    return part.part
-```
+@lru_cache(maxsize=2)
+def cad_repair_system_prompt(*, is_assembly: bool = False) -> str:
+    """Repair system prompt with upstream reference docs per SKILL.md triggers."""
+    sections = [
+        """\
+You repair failed build123d scripts for a STEP-first CAD pipeline.
+
+Follow skills/cad/references/repair-loop.md exactly:
+
 """
+        + _load_reference("repair-loop.md"),
+        "Inspection and validation (skills/cad/references/inspection-and-validation.md):\n\n"
+        + _load_reference("inspection-and-validation.md"),
+    ]
+    if is_assembly:
+        sections.append(
+            "Assembly positioning (skills/cad/references/positioning.md):\n"
+            + _load_reference("positioning.md")
+        )
+    sections.append(_REPAIR_OUTPUT_CONTRACT)
+    return "\n\n".join(sections)
+
+
+# Default part-task prompts (tests and callers that do not pass is_assembly).
+CAD_SYSTEM_PROMPT = cad_system_prompt(is_assembly=False)
+CAD_REPAIR_SYSTEM_PROMPT = cad_repair_system_prompt(is_assembly=False)
 
 CAD_CODEGEN_USER_PROMPT = """\
 {brief}
@@ -98,8 +139,8 @@ Output prose bullet notes and the JSON validation block only.
 2. Immediately after the prose, emit a fenced JSON block (```json ... ```) with EXACTLY these
    nullable keys and no others:
    {{
-     "bbox_min": [x, y, z] | null,
-     "bbox_max": [x, y, z] | null,
+     "bbox_min": [size_x, size_y, size_z] | null,
+     "bbox_max": [size_x, size_y, size_z] | null,
      "bbox_tolerance_pct": number | null,
      "min_face_count": integer | null,
      "min_solid_count": integer | null,
@@ -112,6 +153,15 @@ Output prose bullet notes and the JSON validation block only.
        {{"moving": "#...", "target": "#...", "mode": "flush|center", "axis": "x|y|z"}}
      ] | null
    }}
+
+   bbox_min and bbox_max are per-axis **extents (sizes in mm)**, not world-space corner
+   coordinates. Example: a 100 x 60 x 6 mm plate → "bbox_max": [100, 60, 6]. When the
+   origin is off-center, still emit sizes (e.g. 50 x 50 x 50), not min/max corner coords.
+
+   measure_checks and align_checks are usually null at brief time because selector refs
+   (#f1, etc.) do not exist until after the first STEP is generated. Do not invent refs.
+   Rely on bbox/face/solid targets for automated checks.
+
    Use null for anything you did not derive a confident target for.
 """
 
@@ -124,26 +174,6 @@ shading, texture, or anti-aliasing artifacts.
 Respond with a first line of exactly PASS or FAIL, then on following lines explain what you
 saw. If you flag a defect, describe it in terms that map to a measurable check (e.g. "hole
 pattern looks asymmetric" rather than "looks a bit off").
-"""
-
-CAD_REPAIR_SYSTEM_PROMPT = """\
-You repair failed build123d scripts for a STEP-first CAD pipeline.
-
-Follow skills/cad/references/repair-loop.md exactly:
-
-""" + _load_reference("repair-loop.md") + """
-
-Inspection and validation (skills/cad/references/inspection-and-validation.md):
-
-""" + _load_reference("inspection-and-validation.md") + """
-
-Output contract:
-- Return ONLY a complete replacement Python script.
-- Start with `from build123d import *` and define `def gen_step() -> Part`.
-- Do not call export_step() or add `if __name__ == "__main__"` — skills/cad/scripts/step
-  handles execution and export.
-- Apply the smallest responsible source change for the classified failure, then the full
-  script will be rerun through scripts/step and validation.
 """
 
 CAD_REPAIR_USER_PROMPT = """\
