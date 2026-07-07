@@ -58,6 +58,10 @@ packages = ["src/derive_cad"]
 
 [tool.ruff]
 line-length = 100
+exclude = [
+    "packages/cadpy",
+    "skills",
+]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]

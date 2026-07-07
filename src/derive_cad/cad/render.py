@@ -102,8 +102,9 @@ def render_snapshots(
 
     paths = _parse_saved_paths(result.stdout)
     if len(paths) != len(views):
+        tail = result.stdout[-2000:]
         raise RenderError(
-            f"Expected {len(views)} snapshot PNGs, got {len(paths)}. stdout:\n{result.stdout[-2000:]}"
+            f"Expected {len(views)} snapshot PNGs, got {len(paths)}. stdout:\n{tail}"
         )
     missing = [path for path in paths if not path.is_file()]
     if missing:
