@@ -1,3 +1,5 @@
+import sys
+
 import numpy as np
 import pytest
 from cad_scripts import SAMPLE_BRACKET_SCRIPT
@@ -6,7 +8,13 @@ from PIL import Image
 from derive_cad.cad.render import DEFAULT_VIEWS, render_snapshots
 from derive_cad.cad.runner import run_script
 
-pytestmark = pytest.mark.integration
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.skipif(
+        sys.platform == "linux",
+        reason="Playwright snapshot rendering is validated on macOS CI runners.",
+    ),
+]
 
 
 @pytest.fixture
