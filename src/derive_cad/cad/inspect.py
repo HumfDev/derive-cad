@@ -13,6 +13,7 @@ class GeometryFacts:
     face_count: int
     edge_count: int
     vertex_count: int
+    solid_count: int
 
     @property
     def is_degenerate(self) -> bool:
@@ -37,4 +38,5 @@ def inspect_step(step_path: Path) -> GeometryFacts:
         face_count=len(shape.faces()),
         edge_count=len(shape.edges()),
         vertex_count=len(shape.vertices()),
+        solid_count=len(shape.solids()),
     )

@@ -1,23 +1,76 @@
-import re
+import platform
+import subprocess
 import sys
-from datetime import UTC, datetime
 from pathlib import Path
 
 
-def _slugify(text: str, max_len: int = 40) -> str:
-    slug = re.sub(r"[^a-zA-Z0-9]+", "-", text.strip().lower()).strip("-")
-    return (slug or "run")[:max_len]
+def sanitize_folder_name(name: str, max_len: int = 48) -> str:
+    """Re-export for tests; canonical implementation lives in llm.naming."""
+    from derive_cad.llm.naming import sanitize_folder_name as _sanitize
+
+    return _sanitize(name, max_len=max_len)
 
 
-def new_run_dir(working_dir: Path, description: str = "run") -> Path:
-    """Create a fresh, timestamped scratch directory for one generation attempt,
-    nested inside the user's working folder so scripts/artifacts/logs stay
-    co-located and inspectable (see plan: never run in the CLI's own install dir).
-    """
-    timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    run_dir = working_dir / ".runs" / f"{timestamp}-{_slugify(description)}"
-    run_dir.mkdir(parents=True, exist_ok=True)
-    return run_dir
+def allocate_design_dir(working_dir: Path, name: str) -> Path:
+    """Create a new design folder directly under the working directory."""
+    working_dir.mkdir(parents=True, exist_ok=True)
+    base = sanitize_folder_name(name)
+    candidate = working_dir / base
+    if not candidate.exists():
+        candidate.mkdir(parents=True)
+        return candidate
+
+    suffix = 2
+    while True:
+        candidate = working_dir / f"{base}-{suffix}"
+        if not candidate.exists():
+            candidate.mkdir(parents=True)
+            return candidate
+        suffix += 1
+
+
+def new_design_dir(working_dir: Path, name: str) -> Path:
+    """Allocate a human-readable design folder for one generation attempt."""
+    return allocate_design_dir(working_dir, name)
+
+
+def _is_design_dir(path: Path) -> bool:
+    return path.is_dir() and not path.name.startswith(".") and (path / "model.step").is_file()
+
+
+def list_design_dirs(working_dir: Path) -> list[Path]:
+    """Return design folders newest-first (by last modified time)."""
+    if not working_dir.is_dir():
+        return []
+
+    designs: list[Path] = []
+    for path in working_dir.iterdir():
+        if _is_design_dir(path):
+            designs.append(path)
+
+    return sorted(designs, key=lambda path: path.stat().st_mtime, reverse=True)
+
+
+def latest_design_dir(working_dir: Path) -> Path | None:
+    designs = list_design_dirs(working_dir)
+    return designs[0] if designs else None
+
+
+# Backward-compatible aliases used elsewhere in the CLI.
+list_run_dirs = list_design_dirs
+latest_run_dir = latest_design_dir
+
+
+def open_path(path: Path) -> None:
+    """Open a file or folder with the platform default handler."""
+    resolved = path.resolve()
+    system = platform.system()
+    if system == "Darwin":
+        subprocess.run(["open", str(resolved)], check=True)
+    elif system == "Windows":
+        subprocess.run(["explorer", str(resolved)], check=True)
+    else:
+        subprocess.run(["xdg-open", str(resolved)], check=True)
 
 
 def python_executable() -> str:

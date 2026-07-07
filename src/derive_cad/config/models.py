@@ -14,10 +14,13 @@ class Config(BaseModel):
 
     provider: str | None = None
     model: str | None = None
+    api_key_env_var: str | None = None
     ollama_base_url: str | None = None
     working_dir: str | None = None
     default_export_formats: list[str] = Field(default_factory=lambda: ["stl"])
     sandbox_timeout_s: int = 60
     secrets_backend: SecretsBackend = "keyring"
+    enable_snapshot_review: bool = True
+    bbox_tolerance_pct: float = 15.0
 
     model_config = {"extra": "ignore"}

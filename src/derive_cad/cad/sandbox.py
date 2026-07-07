@@ -7,9 +7,8 @@ if sys.platform != "win32":
     import resource
 
 # Generous defaults — degenerate LLM-authored geometry (huge fillet radii,
-# runaway boolean operations) can legitimately need more memory/CPU than the
-# fixed Milestone 1 script does; these are meant to catch true runaways, not
-# to be a tight budget.
+# runaway boolean operations) can legitimately need more memory/CPU than simple
+# test fixtures; these are meant to catch true runaways, not to be a tight budget.
 DEFAULT_MEMORY_LIMIT_BYTES = 4 * 1024 * 1024 * 1024  # 4 GiB
 DEFAULT_CPU_LIMIT_S = 120
 

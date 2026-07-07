@@ -3,13 +3,14 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "derive-cad"
+name = "dcad"
 version = "0.1.0"
 description = "Text to CAD from your terminal — generate real STEP/STL/3MF/GLB files from plain-language descriptions."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10,<3.15"
 authors = [{ name = "HumfDev" }]
+keywords = ["cad", "3d", "llm", "build123d", "text-to-cad"]
 classifiers = [
     "Programming Language :: Python :: 3",
     "Environment :: Console",
@@ -18,6 +19,7 @@ classifiers = [
 dependencies = [
     "build123d>=0.11.1,<0.12",
     "litellm>=1.83,<2",
+    "matplotlib>=3.8,<4",
     "keyring>=25.6,<26",
     "typer>=0.26,<0.27",
     "rich>=15.0,<16",
@@ -26,6 +28,11 @@ dependencies = [
     "tomli-w>=1.0,<2",
     "tomli>=2.0,<3; python_version<'3.11'",
 ]
+
+[project.urls]
+Homepage = "https://github.com/HumfDev/derive-cad"
+Repository = "https://github.com/HumfDev/derive-cad"
+Issues = "https://github.com/HumfDev/derive-cad/issues"
 
 [project.optional-dependencies]
 dev = [
@@ -36,7 +43,7 @@ dev = [
 ]
 
 [project.scripts]
-derivecad = "derive_cad.cli.app:main"
+dcad = "derive_cad.cli.app:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/derive_cad"]

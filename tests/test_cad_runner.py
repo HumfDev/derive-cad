@@ -1,14 +1,14 @@
 import pytest
 
 from derive_cad.cad.runner import run_script
-from derive_cad.cad.templates import BARE_PIPELINE_SCRIPT
 from derive_cad.utils.errors import GenerationError
+from cad_scripts import SAMPLE_BRACKET_SCRIPT
 
 pytestmark = pytest.mark.integration
 
 
-def test_fixed_bracket_script_produces_step(tmp_path):
-    result = run_script(BARE_PIPELINE_SCRIPT, run_dir=tmp_path, timeout_s=60)
+def test_sample_bracket_script_produces_step(tmp_path):
+    result = run_script(SAMPLE_BRACKET_SCRIPT, run_dir=tmp_path, timeout_s=60)
 
     assert result.step_path.exists()
     assert result.step_path.stat().st_size > 0

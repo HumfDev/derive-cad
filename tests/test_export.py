@@ -3,14 +3,14 @@ import pytest
 from derive_cad.cad.export import step_to_3mf, step_to_glb, step_to_stl
 from derive_cad.cad.inspect import inspect_step
 from derive_cad.cad.runner import run_script
-from derive_cad.cad.templates import BARE_PIPELINE_SCRIPT
+from cad_scripts import SAMPLE_BRACKET_SCRIPT
 
 pytestmark = pytest.mark.integration
 
 
 @pytest.fixture
 def generated_step(tmp_path):
-    result = run_script(BARE_PIPELINE_SCRIPT, run_dir=tmp_path, timeout_s=60)
+    result = run_script(SAMPLE_BRACKET_SCRIPT, run_dir=tmp_path, timeout_s=60)
     return result.step_path
 
 

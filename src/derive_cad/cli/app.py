@@ -3,13 +3,15 @@ import sys
 import typer
 
 from derive_cad.__about__ import __version__
+from derive_cad.cli.commands_cmd import commands
 from derive_cad.cli.init_cmd import init
+from derive_cad.cli.open_cmd import open_app
 from derive_cad.cli.run_cmd import run
 from derive_cad.utils.errors import DeriveCadError
 from derive_cad.utils.logging import error_console
 
 app = typer.Typer(
-    name="derivecad",
+    name="dcad",
     help=(
         "Text to CAD from your terminal — generate STEP/STL/3MF/GLB files "
         "from plain-language descriptions."
@@ -19,11 +21,13 @@ app = typer.Typer(
 
 app.command(name="init")(init)
 app.command(name="run")(run)
+app.command(name="commands")(commands)
+app.add_typer(open_app, name="open")
 
 
 def _version_callback(value: bool) -> None:
     if value:
-        typer.echo(f"derivecad {__version__}")
+        typer.echo(f"dcad {__version__}")
         raise typer.Exit()
 
 
@@ -34,10 +38,10 @@ def main_options(
         "--version",
         callback=_version_callback,
         is_eager=True,
-        help="Show the derivecad version and exit.",
+        help="Show the dcad version and exit.",
     ),
 ) -> None:
-    """derivecad — text to CAD from your terminal."""
+    """dcad — text to CAD from your terminal."""
 
 
 def main() -> None:
