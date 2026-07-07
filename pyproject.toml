@@ -39,6 +39,7 @@ dev = [
     "pytest-cov",
     "ruff>=0.15,<0.16",
     "mypy",
+    "pillow>=11,<12",
 ]
 
 [project.scripts]
